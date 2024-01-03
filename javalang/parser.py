@@ -228,7 +228,8 @@ class Parser(object):
 # -- Identifiers --
 
     @parse_debug
-    def parse_identifier(self):
+    def parse_identifier(self, skip_annotation: bool = False):
+        self.skip_annotation(skip_annotation)
         return self.accept(Identifier)
 
     @parse_debug
@@ -457,15 +458,19 @@ class Parser(object):
 # -- Types --
 
     @parse_debug
-    def parse_type(self):
+    def parse_type(self, skip_annotation: bool = False):
         java_type = None
+
+        self.skip_annotation(skip_annotation)
 
         if isinstance(self.tokens.look(), BasicType):
             java_type = self.parse_basic_type()
         elif isinstance(self.tokens.look(), Identifier):
-            java_type = self.parse_reference_type()
+            java_type = self.parse_reference_type(skip_annotation=skip_annotation)
         else:
             self.illegal("Expected type")
+
+        self.skip_annotation(skip_annotation)
 
         java_type.dimensions = self.parse_array_dimension()
 
@@ -476,15 +481,15 @@ class Parser(object):
         return tree.BasicType(name=self.accept(BasicType))
 
     @parse_debug
-    def parse_reference_type(self):
+    def parse_reference_type(self, skip_annotation: bool = False):
         reference_type = tree.ReferenceType()
         tail = reference_type
 
         while True:
-            tail.name = self.parse_identifier()
+            tail.name = self.parse_identifier(skip_annotation=skip_annotation)
 
             if self.would_accept('<'):
-                tail.arguments = self.parse_type_arguments()
+                tail.arguments = self.parse_type_arguments(skip_annotation=skip_annotation)
 
             if self.try_accept('.'):
                 tail.sub_type = tree.ReferenceType()
@@ -495,13 +500,13 @@ class Parser(object):
         return reference_type
 
     @parse_debug
-    def parse_type_arguments(self):
+    def parse_type_arguments(self, skip_annotation: bool = False):
         type_arguments = list()
 
         self.accept('<')
 
         while True:
-            type_argument = self.parse_type_argument()
+            type_argument = self.parse_type_argument(skip_annotation=skip_annotation)
             type_arguments.append(type_argument)
 
             if self.try_accept('>'):
@@ -512,7 +517,7 @@ class Parser(object):
         return type_arguments
 
     @parse_debug
-    def parse_type_argument(self):
+    def parse_type_argument(self, skip_annotation: bool = False):
         pattern_type = None
         base_type = None
 
@@ -527,7 +532,7 @@ class Parser(object):
             self.accept('[', ']')
             base_type.dimensions = [None]
         else:
-            base_type = self.parse_reference_type()
+            base_type = self.parse_reference_type(skip_annotation=skip_annotation)
             base_type.dimensions = []
 
         base_type.dimensions += self.parse_array_dimension()
@@ -690,6 +695,13 @@ class Parser(object):
             return self.parse_element_value()
 
     @parse_debug
+    def skip_annotation(self, skip: bool = False):
+        if skip:
+            while isinstance(self.tokens.look(), Annotation) and isinstance(self.tokens.look(i=1), Identifier):
+                next(self.tokens)
+                next(self.tokens)
+
+    @parse_debug
     def parse_element_value_pairs(self):
         pairs = list()
 
@@ -833,7 +845,7 @@ class Parser(object):
 
     @parse_debug
     def parse_method_or_field_declaraction(self):
-        member_type = self.parse_type()
+        member_type = self.parse_type(skip_annotation=True)
         member_name = self.parse_identifier()
 
         member = self.parse_method_or_field_rest()
@@ -941,7 +953,7 @@ class Parser(object):
             method.name = method_name
 
         else:
-            method_return_type = self.parse_type()
+            method_return_type = self.parse_type(skip_annotation=True)
             method_name = self.parse_identifier()
 
             method = self.parse_method_declarator_rest()
@@ -1013,7 +1025,7 @@ class Parser(object):
 
     @parse_debug
     def parse_interface_method_or_field_declaration(self):
-        java_type = self.parse_type()
+        java_type = self.parse_type(skip_annotation=True)
         name = self.parse_identifier()
         member = self.parse_interface_method_or_field_rest()
 
@@ -1113,7 +1125,7 @@ class Parser(object):
         method_name = None
 
         if not self.try_accept('void'):
-            return_type = self.parse_type()
+            return_type = self.parse_type(skip_annotation=True)
 
         method_name = self.parse_identifier()
         method = self.parse_interface_method_declarator_rest()
@@ -1139,7 +1151,7 @@ class Parser(object):
             modifiers, annotations = self.parse_variable_modifiers()
             
             token = self.tokens.look()
-            parameter_type = self.parse_type()
+            parameter_type = self.parse_type(skip_annotation=True)
             varargs = False
 
             if self.try_accept('...'):
